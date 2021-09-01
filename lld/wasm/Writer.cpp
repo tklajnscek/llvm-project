@@ -1029,11 +1029,14 @@ void Writer::createInitMemoryFunction() {
     //    (i32.const 1)
     //   )
     //   (then
-    //    (drop
-    //     (i32.atomic.wait align=2 offset=0
-    //      (i32.const $__init_memory_flag)
-    //      (i32.const 1)
-    //      (i32.const -1)
+    //    (loop
+    //     (br_if 0
+    //      (i32.eq
+    //       (i32.atomic.load  align=2 offset=0
+    //         (i32.const $__init_memory_flag)
+    //       )
+    //       (i32.const 1)
+    //      )
     //     )
     //    )
     //   )
@@ -1042,12 +1045,6 @@ void Writer::createInitMemoryFunction() {
     //    (i32.atomic.store align=2 offset=0
     //     (i32.const $__init_memory_flag)
     //     (i32.const 2)
-    //    )
-    //    (drop
-    //     (i32.atomic.notify align=2 offset=0
-    //      (i32.const $__init_memory_flag)
-    //      (i32.const -1u)
-    //     )
     //    )
     //   )
     //  )
@@ -1095,14 +1092,18 @@ void Writer::createInitMemoryFunction() {
     writeU8(os, WASM_TYPE_NORESULT, "blocktype");
 
     // Did not increment 0, so wait for main thread to initialize memory
+    writeU8(os, WASM_OPCODE_LOOP, "LOOP");
+    writeU8(os, WASM_TYPE_NORESULT, "blocktype");
     writeGetFlagAddress();
-    writeI32Const(os, 1, "expected flag value");
-    writeI64Const(os, -1, "timeout");
-
     writeU8(os, WASM_OPCODE_ATOMICS_PREFIX, "atomics prefix");
-    writeUleb128(os, WASM_OPCODE_I32_ATOMIC_WAIT, "i32.atomic.wait");
+    writeUleb128(os, WASM_OPCODE_I32_ATOMIC_LOAD, "i32.atomic.load");
     writeMemArg(os, 2, 0);
-    writeU8(os, WASM_OPCODE_DROP, "drop");
+    writeI32Const(os, 1, "expected flag value");
+    writeU8(os, WASM_OPCODE_I32_EQ, "i32.eq");
+    writeU8(os, WASM_OPCODE_BR_IF, "br_if");
+    writeUleb128(os, 0, "label index");
+
+    writeU8(os, WASM_OPCODE_END, "END");
 
     writeU8(os, WASM_OPCODE_ELSE, "ELSE");
 
@@ -1136,14 +1137,6 @@ void Writer::createInitMemoryFunction() {
     writeU8(os, WASM_OPCODE_ATOMICS_PREFIX, "atomics prefix");
     writeUleb128(os, WASM_OPCODE_I32_ATOMIC_STORE, "i32.atomic.store");
     writeMemArg(os, 2, 0);
-
-    // Notify any waiters that memory initialization is complete
-    writeGetFlagAddress();
-    writeI32Const(os, -1, "number of waiters");
-    writeU8(os, WASM_OPCODE_ATOMICS_PREFIX, "atomics prefix");
-    writeUleb128(os, WASM_OPCODE_ATOMIC_NOTIFY, "atomic.notify");
-    writeMemArg(os, 2, 0);
-    writeU8(os, WASM_OPCODE_DROP, "drop");
 
     writeU8(os, WASM_OPCODE_END, "END");
 
